@@ -1,0 +1,15 @@
+# Xcode
+Whisper.xcodeproj/
+build/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# App bundle output
+*.app
