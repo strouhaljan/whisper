@@ -5,6 +5,7 @@ import Foundation
 struct TranscriptionService {
     let apiKey: String
     let model: String
+    let language: String?  // ISO 639-1 code, or nil for auto-detect
 
     private let endpoint = URL(string: "https://api.groq.com/openai/v1/audio/transcriptions")!
 
@@ -15,19 +16,23 @@ struct TranscriptionService {
         }
 
         let boundary = "Boundary-\(UUID().uuidString)"
-        var request = URLRequest(url: endpoint)
+        var request = URLRequest(url: endpoint, timeoutInterval: 30)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         let audioData = try Data(contentsOf: fileURL)
+        var fields = [
+            "model": model,
+            "response_format": "json",
+            "temperature": "0",
+        ]
+        if let language, !language.isEmpty {
+            fields["language"] = language
+        }
         let body = makeMultipartBody(
             boundary: boundary,
-            fields: [
-                "model": model,
-                "response_format": "json",
-                "temperature": "0",
-            ],
+            fields: fields,
             file: (
                 fieldName: "file",
                 fileName: fileURL.lastPathComponent,

@@ -22,19 +22,39 @@ struct SettingsView: View {
                     }
                     .labelsHidden()
                 }
+                LabeledContent("Language") {
+                    LanguagePicker(selected: $appState.languages)
+                }
+                Text(languageHint)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
                 Text("Get a key at console.groq.com/keys")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
 
-            // ── Shortcut ─────────────────────────────────────
+            // ── Shortcuts ────────────────────────────────────
             Card {
-                Label("Shortcut", systemImage: "command")
+                Label("Shortcuts", systemImage: "command")
             } content: {
-                LabeledContent("Push to talk") {
-                    HotkeyRecorderView(hotkey: $appState.hotkey)
+                ForEach($appState.bindings) { $binding in
+                    ShortcutRow(binding: $binding) {
+                        if appState.bindings.count > 1 {
+                            appState.bindings.removeAll { $0.id == binding.id }
+                        }
+                    }
                 }
-                Text("Press a key combo (e.g. ⌥Space) or hold and release modifiers (e.g. ⌃⌥). For fn alone, first set \"Press 🌐 key to: Do Nothing\" in System Settings → Keyboard.")
+                Button {
+                    appState.bindings.append(HotkeyBinding())
+                } label: {
+                    Label("Add shortcut", systemImage: "plus")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .padding(.top, 2)
+
+                Text("Press a key combo or hold and release modifiers. For fn alone, set \"Press 🌐 key to: Do Nothing\" in System Settings → Keyboard.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -62,12 +82,48 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .frame(width: 400)
+        .frame(width: 420)
         .onAppear { loginItems.refresh() }
+    }
+
+    private var languageHint: String {
+        switch appState.languages.count {
+        case 0: return "Auto-detect — works well for longer clips."
+        case 1: return "Whisper will expect \(SupportedLanguage.name(for: appState.languages[0]))."
+        default: return "Multiple languages — auto-detect with narrowed scope."
+        }
     }
 }
 
-/// A full-width card with a title row inside the box.
+// MARK: - Shortcut row
+
+private struct ShortcutRow: View {
+    @Binding var binding: HotkeyBinding
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HotkeyRecorderView(hotkey: $binding.hotkey)
+            Picker("", selection: $binding.mode) {
+                ForEach(HotkeyBinding.Mode.allCases, id: \.self) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 120)
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Image(systemName: "minus.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+// MARK: - Card
+
 private struct Card<Title: View, Content: View>: View {
     @ViewBuilder let title: Title
     @ViewBuilder let content: Content

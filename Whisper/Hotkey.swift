@@ -1,7 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// A push-to-talk hotkey: either modifier(s) + a non-modifier key,
+/// A keyboard shortcut: either modifier(s) + a non-modifier key,
 /// or modifier(s) alone (including Fn/🌐).
 struct Hotkey: Codable, Equatable {
     var keyCode: UInt16?          // nil = modifier-only trigger
@@ -68,4 +68,35 @@ struct Hotkey: Codable, Equatable {
             return chars.isEmpty ? "Key \(event.keyCode)" : chars.uppercased()
         }
     }
+}
+
+// MARK: - Binding (hotkey + mode)
+
+/// Pairs a hotkey with a trigger mode.
+struct HotkeyBinding: Codable, Equatable, Identifiable {
+    var id: UUID
+    var hotkey: Hotkey
+    var mode: Mode
+
+    enum Mode: String, Codable, CaseIterable {
+        case pushToTalk
+        case toggle
+
+        var label: String {
+            switch self {
+            case .pushToTalk: return "Push to talk"
+            case .toggle:     return "Toggle"
+            }
+        }
+    }
+
+    init(hotkey: Hotkey = .default, mode: Mode = .pushToTalk) {
+        self.id = UUID()
+        self.hotkey = hotkey
+        self.mode = mode
+    }
+
+    static let defaultBindings: [HotkeyBinding] = [
+        HotkeyBinding(hotkey: .default, mode: .pushToTalk)
+    ]
 }

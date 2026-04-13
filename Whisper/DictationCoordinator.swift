@@ -12,7 +12,7 @@ final class DictationCoordinator {
 
     init(appState: AppState) {
         self.appState = appState
-        self.hotkeys = HotkeyManager(hotkey: appState.hotkey)
+        self.hotkeys = HotkeyManager(bindings: appState.bindings)
     }
 
     func start() {
@@ -32,11 +32,11 @@ final class DictationCoordinator {
         hotkeys.onRelease = { [weak self] in self?.endRecording() }
         hotkeys.start()
 
-        // Live-update the hotkey when the user changes it in Settings.
-        appState.$hotkey
+        // Live-update bindings when the user edits them in Settings.
+        appState.$bindings
             .dropFirst()
-            .sink { [weak self] newHotkey in
-                self?.hotkeys.hotkey = newHotkey
+            .sink { [weak self] newBindings in
+                self?.hotkeys.bindings = newBindings
             }
             .store(in: &cancellables)
     }
@@ -54,14 +54,16 @@ final class DictationCoordinator {
 
     private func endRecording() {
         guard appState.status == .recording else { return }
-        overlay.hide()
         guard let url = recorder.stop() else {
             appState.status = .idle
+            overlay.hide()
             return
         }
         appState.status = .transcribing
+        overlay.showTranscribing()
 
-        let service = TranscriptionService(apiKey: appState.apiKey, model: appState.model)
+        let lang = appState.languages.count == 1 ? appState.languages.first : nil
+        let service = TranscriptionService(apiKey: appState.apiKey, model: appState.model, language: lang)
         Task { [weak self] in
             defer { try? FileManager.default.removeItem(at: url) }
             do {
@@ -71,10 +73,14 @@ final class DictationCoordinator {
                     PasteService.paste(text)
                 }
                 self.appState.status = .idle
+                self.overlay.hide()
             } catch {
-                self?.appState.status = .error(error.localizedDescription)
+                guard let self else { return }
+                self.appState.status = .error(error.localizedDescription)
+                self.overlay.showError(error.localizedDescription)
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
-                self?.appState.status = .idle
+                self.overlay.hide()
+                self.appState.status = .idle
             }
         }
     }

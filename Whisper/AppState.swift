@@ -9,10 +9,13 @@ final class AppState: ObservableObject {
     @Published var model: String {
         didSet { UserDefaults.standard.set(model, forKey: "groqModel") }
     }
-    @Published var hotkey: Hotkey {
+    @Published var languages: [String] {
+        didSet { UserDefaults.standard.set(languages, forKey: "languages") }
+    }
+    @Published var bindings: [HotkeyBinding] {
         didSet {
-            if let data = try? JSONEncoder().encode(hotkey) {
-                UserDefaults.standard.set(data, forKey: "hotkey")
+            if let data = try? JSONEncoder().encode(bindings) {
+                UserDefaults.standard.set(data, forKey: "hotkeyBindings")
             }
         }
     }
@@ -38,11 +41,18 @@ final class AppState: ObservableObject {
     init() {
         self.apiKey = UserDefaults.standard.string(forKey: "groqApiKey") ?? ""
         self.model = UserDefaults.standard.string(forKey: "groqModel") ?? "whisper-large-v3-turbo"
-        if let data = UserDefaults.standard.data(forKey: "hotkey"),
-           let decoded = try? JSONDecoder().decode(Hotkey.self, from: data) {
-            self.hotkey = decoded
+        self.languages = UserDefaults.standard.stringArray(forKey: "languages") ?? []
+
+        // Migrate from single hotkey to bindings array.
+        if let data = UserDefaults.standard.data(forKey: "hotkeyBindings"),
+           let decoded = try? JSONDecoder().decode([HotkeyBinding].self, from: data) {
+            self.bindings = decoded
+        } else if let data = UserDefaults.standard.data(forKey: "hotkey"),
+                  let legacy = try? JSONDecoder().decode(Hotkey.self, from: data) {
+            self.bindings = [HotkeyBinding(hotkey: legacy, mode: .pushToTalk)]
+            UserDefaults.standard.removeObject(forKey: "hotkey")
         } else {
-            self.hotkey = .default
+            self.bindings = HotkeyBinding.defaultBindings
         }
     }
 }
