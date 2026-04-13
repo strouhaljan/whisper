@@ -52,12 +52,12 @@ private struct MenuBarIcon: View {
 
 private struct MenuBarContent: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Text(appState.status.label)
-        Divider()
-        SettingsLink {
-            Text("Settings…")
+        Button("Settings") {
+            NSApp.activate(ignoringOtherApps: true)
+            openSettings()
         }
         .keyboardShortcut(",")
         Divider()
