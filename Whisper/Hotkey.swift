@@ -1,11 +1,14 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// A push-to-talk hotkey: a non-modifier key plus one or more modifier flags.
+/// A push-to-talk hotkey: either modifier(s) + a non-modifier key,
+/// or modifier(s) alone (including Fn/🌐).
 struct Hotkey: Codable, Equatable {
-    var keyCode: UInt16
+    var keyCode: UInt16?          // nil = modifier-only trigger
     var modifierFlagsRawValue: UInt
     var keyLabel: String
+
+    var isModifierOnly: Bool { keyCode == nil }
 
     var modifiers: NSEvent.ModifierFlags {
         NSEvent.ModifierFlags(rawValue: modifierFlagsRawValue)
@@ -14,18 +17,21 @@ struct Hotkey: Codable, Equatable {
     var displayString: String {
         var s = ""
         let m = modifiers
-        if m.contains(.control) { s += "⌃" }
-        if m.contains(.option)  { s += "⌥" }
-        if m.contains(.shift)   { s += "⇧" }
-        if m.contains(.command) { s += "⌘" }
-        s += keyLabel
-        return s
+        if m.contains(.function) { s += "fn " }
+        if m.contains(.control)  { s += "⌃" }
+        if m.contains(.option)   { s += "⌥" }
+        if m.contains(.shift)    { s += "⇧" }
+        if m.contains(.command)  { s += "⌘" }
+        if !keyLabel.isEmpty {
+            s += keyLabel
+        }
+        return s.trimmingCharacters(in: .whitespaces)
     }
 
     static let `default` = Hotkey(
-        keyCode: UInt16(kVK_Space),
-        modifierFlagsRawValue: NSEvent.ModifierFlags.option.rawValue,
-        keyLabel: "Space"
+        keyCode: nil,
+        modifierFlagsRawValue: NSEvent.ModifierFlags([.control, .option]).rawValue,
+        keyLabel: ""
     )
 
     /// Produces a human-readable label for the key portion of an NSEvent.

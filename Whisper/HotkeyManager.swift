@@ -2,8 +2,8 @@ import Cocoa
 import Carbon.HIToolbox
 
 /// Global push-to-talk via a CGEvent tap.
-/// Matches a configurable Hotkey and consumes matching events so they
-/// don't reach the frontmost app.
+/// Supports both key combos (modifier + key) and modifier-only triggers
+/// (e.g. hold ⌃⌥, or hold fn).
 final class HotkeyManager {
     var hotkey: Hotkey
     var onPress: (() -> Void)?
@@ -18,7 +18,6 @@ final class HotkeyManager {
     }
 
     func start() {
-        // Ask for accessibility permission so we can observe and consume global key events.
         let opts: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
         _ = AXIsProcessTrustedWithOptions(opts)
 
@@ -38,7 +37,6 @@ final class HotkeyManager {
                 guard let userInfo = userInfo else { return Unmanaged.passUnretained(event) }
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(userInfo).takeUnretainedValue()
 
-                // The system may disable the tap if it takes too long. Re-enable.
                 if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
                     if let tap = manager.eventTap {
                         CGEvent.tapEnable(tap: tap, enable: true)
@@ -47,13 +45,12 @@ final class HotkeyManager {
                 }
 
                 if manager.handle(type: type, event: event) {
-                    return nil  // consume
+                    return nil
                 }
                 return Unmanaged.passUnretained(event)
             },
             userInfo: selfPtr
         ) else {
-            NSLog("Whisper: failed to create event tap. Grant Accessibility permission in System Settings → Privacy & Security → Accessibility, then relaunch.")
             return
         }
 
@@ -63,31 +60,59 @@ final class HotkeyManager {
         CGEvent.tapEnable(tap: tap, enable: true)
     }
 
-    /// Returns true if the event matched the hotkey and should be consumed.
     private func handle(type: CGEventType, event: CGEvent) -> Bool {
+        if hotkey.isModifierOnly {
+            return handleModifierOnly(type: type, event: event)
+        } else {
+            return handleKeyCombo(type: type, event: event)
+        }
+    }
+
+    // MARK: - Modifier-only mode (e.g. ⌃⌥, fn)
+
+    private func handleModifierOnly(type: CGEventType, event: CGEvent) -> Bool {
+        guard type == .flagsChanged else {
+            if isHeld && (type == .keyDown || type == .keyUp) { return true }
+            return false
+        }
+
+        let modsHeld = currentModifiersMatchRequired(event.flags)
+
+        if modsHeld && !isHeld {
+            isHeld = true
+            DispatchQueue.main.async { self.onPress?() }
+        } else if !modsHeld && isHeld {
+            isHeld = false
+            DispatchQueue.main.async { self.onRelease?() }
+        }
+        return false
+    }
+
+    // MARK: - Key combo mode (e.g. ⌥Space)
+
+    private func handleKeyCombo(type: CGEventType, event: CGEvent) -> Bool {
+        guard let requiredKey = hotkey.keyCode else { return false }
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let modsHeld = currentModifiersMatchRequired(event.flags)
 
         switch type {
         case .keyDown:
-            if keyCode == hotkey.keyCode && modsHeld {
+            if keyCode == requiredKey && modsHeld {
                 if !isHeld {
                     isHeld = true
                     DispatchQueue.main.async { self.onPress?() }
                 }
-                return true  // consume initial press AND auto-repeats
+                return true
             }
 
         case .keyUp:
-            if keyCode == hotkey.keyCode && isHeld {
+            if keyCode == requiredKey && isHeld {
                 isHeld = false
                 DispatchQueue.main.async { self.onRelease?() }
                 return true
             }
 
         case .flagsChanged:
-            // User released a required modifier mid-recording — end the take.
-            // Don't consume; the modifier key release is legitimate.
             if isHeld && !modsHeld {
                 isHeld = false
                 DispatchQueue.main.async { self.onRelease?() }
@@ -99,12 +124,15 @@ final class HotkeyManager {
         return false
     }
 
+    // MARK: - Helpers
+
     private func currentModifiersMatchRequired(_ cgFlags: CGEventFlags) -> Bool {
         let required = hotkey.modifiers
-        if required.contains(.command) && !cgFlags.contains(.maskCommand) { return false }
-        if required.contains(.option)  && !cgFlags.contains(.maskAlternate) { return false }
-        if required.contains(.control) && !cgFlags.contains(.maskControl) { return false }
-        if required.contains(.shift)   && !cgFlags.contains(.maskShift) { return false }
+        if required.contains(.command)  && !cgFlags.contains(.maskCommand)     { return false }
+        if required.contains(.option)   && !cgFlags.contains(.maskAlternate)   { return false }
+        if required.contains(.control)  && !cgFlags.contains(.maskControl)     { return false }
+        if required.contains(.shift)    && !cgFlags.contains(.maskShift)       { return false }
+        if required.contains(.function) && !cgFlags.contains(.maskSecondaryFn) { return false }
         return true
     }
 }

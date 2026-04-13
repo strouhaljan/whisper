@@ -22,7 +22,7 @@ struct SettingsView: View {
                     Spacer()
                     HotkeyRecorderView(hotkey: $appState.hotkey)
                 }
-                Text("Click the field, then press a key combo with at least one modifier. Hold that combo to record, release to transcribe and paste.")
+                Text("Click the field, then either press a key combo (e.g. ⌥Space) or just hold and release modifier keys (e.g. ⌃⌥). You can also use the fn key alone — set \"Press 🌐 key to: Do Nothing\" in System Settings → Keyboard first.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

@@ -39,7 +39,7 @@ private struct MenuBarIcon: View {
     var body: some View {
         Image(systemName: symbolName)
     }
-               
+
     private var symbolName: String {
         switch appState.status {
         case .idle:         return "mic.circle"
