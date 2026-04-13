@@ -7,6 +7,7 @@ final class HotkeyManager {
     var bindings: [HotkeyBinding]
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
+    var onCancel: (() -> Void)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -14,6 +15,7 @@ final class HotkeyManager {
     // Active recording state.
     private var activeBinding: HotkeyBinding?
     private var toggleArmed = false  // toggle modifier-only: mods released, waiting for re-press
+    private var needsFullRelease = false  // after cancel, block re-trigger until all mods released
 
     init(bindings: [HotkeyBinding]) {
         self.bindings = bindings
@@ -75,6 +77,14 @@ final class HotkeyManager {
     // MARK: - Idle → try to start recording
 
     private func handleWhileIdle(type: CGEventType, event: CGEvent) -> Bool {
+        // After a cancel, wait for all modifiers to be released before accepting new triggers.
+        if needsFullRelease {
+            if type == .flagsChanged && noModifiersHeld(event.flags) {
+                needsFullRelease = false
+            }
+            return false
+        }
+
         for binding in bindings {
             if matchesPress(type: type, event: event, binding: binding) {
                 activeBinding = binding
@@ -121,12 +131,16 @@ final class HotkeyManager {
 
         if hotkey.isModifierOnly {
             guard type == .flagsChanged else {
-                // Consume keyDown/keyUp while recording.
-                if type == .keyDown || type == .keyUp { return true }
+                // Don't consume keystrokes during modifier-only recording.
+                // The user may be building a longer shortcut (e.g. ⌃⌥⌘←).
                 return false
             }
             if !modsMatch(event.flags, hotkey: hotkey) {
                 release()
+            } else if extraModifiersPresent(event.flags, beyond: hotkey) {
+                // User added modifiers beyond the binding (e.g. ⌃⌥ → ⌃⌥⌘).
+                // This isn't a dictation — cancel without transcribing.
+                cancel()
             }
             return false
         } else {
@@ -160,14 +174,17 @@ final class HotkeyManager {
         if hotkey.isModifierOnly {
             // State machine: recording → mods released (armed) → mods pressed again → stop.
             guard type == .flagsChanged else {
-                if type == .keyDown || type == .keyUp { return true }
-                return false
+                return false  // don't consume keystrokes
             }
-            let held = modsMatch(event.flags, hotkey: hotkey)
-            if !toggleArmed && !held {
-                toggleArmed = true
-            } else if toggleArmed && held {
-                release()
+            if extraModifiersPresent(event.flags, beyond: hotkey) {
+                cancel()
+            } else {
+                let held = modsMatch(event.flags, hotkey: hotkey)
+                if !toggleArmed && !held {
+                    toggleArmed = true
+                } else if toggleArmed && held {
+                    release()
+                }
             }
             return false
         } else {
@@ -210,6 +227,24 @@ final class HotkeyManager {
         }
     }
 
+    /// Returns true if the current flags contain modifiers beyond what the hotkey requires.
+    private func extraModifiersPresent(_ cgFlags: CGEventFlags, beyond hotkey: Hotkey) -> Bool {
+        let required = hotkey.modifiers
+        let extras: [(NSEvent.ModifierFlags, CGEventFlags)] = [
+            (.command,  .maskCommand),
+            (.option,   .maskAlternate),
+            (.control,  .maskControl),
+            (.shift,    .maskShift),
+            (.function, .maskSecondaryFn),
+        ]
+        for (nsMod, cgMod) in extras {
+            if !required.contains(nsMod) && cgFlags.contains(cgMod) {
+                return true
+            }
+        }
+        return false
+    }
+
     private func modsMatch(_ cgFlags: CGEventFlags, hotkey: Hotkey) -> Bool {
         let required = hotkey.modifiers
         if required.contains(.command)  && !cgFlags.contains(.maskCommand)     { return false }
@@ -224,5 +259,20 @@ final class HotkeyManager {
         activeBinding = nil
         toggleArmed = false
         DispatchQueue.main.async { self.onRelease?() }
+    }
+
+    private func cancel() {
+        activeBinding = nil
+        toggleArmed = false
+        needsFullRelease = true
+        DispatchQueue.main.async { self.onCancel?() }
+    }
+
+    private func noModifiersHeld(_ cgFlags: CGEventFlags) -> Bool {
+        !cgFlags.contains(.maskCommand) &&
+        !cgFlags.contains(.maskAlternate) &&
+        !cgFlags.contains(.maskControl) &&
+        !cgFlags.contains(.maskShift) &&
+        !cgFlags.contains(.maskSecondaryFn)
     }
 }

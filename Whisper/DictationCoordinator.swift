@@ -30,6 +30,7 @@ final class DictationCoordinator {
 
         hotkeys.onPress = { [weak self] in self?.beginRecording() }
         hotkeys.onRelease = { [weak self] in self?.endRecording() }
+        hotkeys.onCancel = { [weak self] in self?.cancelRecording() }
         hotkeys.start()
 
         // Live-update bindings when the user edits them in Settings.
@@ -50,6 +51,15 @@ final class DictationCoordinator {
         } catch {
             appState.status = .error(error.localizedDescription)
         }
+    }
+
+    private func cancelRecording() {
+        guard appState.status == .recording else { return }
+        overlay.hide()
+        if let url = recorder.stop() {
+            try? FileManager.default.removeItem(at: url)
+        }
+        appState.status = .idle
     }
 
     private func endRecording() {
